@@ -296,7 +296,12 @@ footer { color: var(--muted); font-size: 12px; text-align: center; }
 
   function ebayUrl(q, sold) { return "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q) + (sold ? "&LH_Sold=1&LH_Complete=1" : ""); }
   // Terapeak (Seller Hub > Research): sold tab, last 90 days, shows sell-through rate
-  function terapeakUrl(q) { return "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD"; }
+  function terapeakUrl(q) {
+    var end = Date.now(), start = end - 90 * 24 * 60 * 60 * 1000;
+    return "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) +
+      "&dayRange=90&startDate=" + start + "&endDate=" + end +
+      "&categoryId=0&offset=0&limit=50&tabName=SOLD&tz=America%2FNew_York";
+  }
   function linksHtml(q) {
     q = q || " ";
     return '<a class="link primary" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, true)) + '">eBay sold comps</a>' +
