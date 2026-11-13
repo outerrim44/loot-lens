@@ -120,6 +120,8 @@ details.why p { margin: 0 0 6px; }
 .links .row { display: flex; gap: 8px; }
 a.link { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 12px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1.5px solid var(--line); color: var(--ink); background: var(--surface); }
 a.link.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); font-size: 16px; min-height: 50px; }
+a.link.tp { border-color: var(--accent); color: var(--accent); flex: 1.3; }
+.links .row a.link { padding: 8px 6px; }
 a.link::after { content: "\2197"; }
 .busy { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; flex: 0 0 auto; }
@@ -293,10 +295,13 @@ footer { color: var(--muted); font-size: 12px; text-align: center; }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
   function ebayUrl(q, sold) { return "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q) + (sold ? "&LH_Sold=1&LH_Complete=1" : ""); }
+  // Terapeak (Seller Hub > Research): sold tab, last 90 days, shows sell-through rate
+  function terapeakUrl(q) { return "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD"; }
   function linksHtml(q) {
     q = q || " ";
     return '<a class="link primary" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, true)) + '">eBay sold comps</a>' +
-      '<div class="row"><a class="link" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, false)) + '">Active</a>' +
+      '<div class="row"><a class="link tp" target="_blank" rel="noopener" href="' + esc(terapeakUrl(q)) + '">Sell-through</a>' +
+      '<a class="link" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, false)) + '">Active</a>' +
       '<a class="link" target="_blank" rel="noopener" href="' + esc("https://www.google.com/search?q=" + encodeURIComponent(q + " sold price")) + '">Google</a></div>';
   }
 
