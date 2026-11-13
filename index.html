@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14202c">
+<title>Loot Lens</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: one phone-width column. Live viewfinder + shutter on top,
+   one compact result card, then learned notes and recent scans. */
+:root {
+  --bg: #e9edf2; --surface: #ffffff; --ink: #14202c; --muted: #5a6877; --line: #d3dae2;
+  --accent: #1d4fd7; --accent-ink: #ffffff; --tag: #f6c443; --tag-ink: #2b2000;
+  --good: #1b7a48; --warn: #a8650a; --bad: #b3312b;
+  --font-display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f151c; --surface: #18212b; --ink: #e8edf3; --muted: #98a6b5; --line: #2b3745;
+    --accent: #7ea2ff; --accent-ink: #08142e; --good: #5fcf94; --warn: #efb04e; --bad: #ff8a80;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+}
+main {
+  max-width: 520px; margin: 0 auto;
+  padding-top: max(14px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 14px;
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; }
+:focus-visible { outline: 3px solid var(--tag); outline-offset: 2px; }
+
+header { display: flex; align-items: center; justify-content: space-between; }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.02em; margin: 0; display: flex; align-items: center; gap: 10px; }
+h1 svg { width: 34px; height: 34px; }
+h1 .lens-word { color: var(--accent); }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.iconbtn { width: 44px; height: 44px; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 10px; display: grid; place-items: center; }
+.iconbtn svg { width: 24px; height: 24px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+input[type="text"], input[type="password"], select, textarea {
+  width: 100%; min-height: 44px; border: 1.5px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink); padding: 8px 12px; font-size: 16px;
+}
+textarea { min-height: 90px; font-size: 13px; font-family: ui-monospace, monospace; }
+.primarybtn { min-height: 46px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 600; cursor: pointer; padding: 0 16px; }
+.ghost { min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 500; cursor: pointer; padding: 0 14px; }
+.textbtn { background: none; border: 0; padding: 6px 2px; color: var(--accent); font-weight: 500; font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.small { font-size: 13px; color: var(--muted); margin: 0; }
+.small a { color: var(--accent); }
+
+/* camera */
+.cam { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; max-height: 48vh; width: 100%; }
+.cam video, .cam img.frozen { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+.cam .flash.on { opacity: 0.8; transition: none; }
+.cam .camMsg { position: absolute; inset: 0; display: grid; place-items: center; color: #e8edf3; text-align: center; padding: 24px; font-size: 15px; }
+.shutterbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shutter {
+  width: 76px; height: 76px; border-radius: 50%; border: 5px solid var(--ink);
+  background: var(--accent); cursor: pointer; flex: 0 0 auto; position: relative;
+  box-shadow: inset 0 0 0 4px var(--surface);
+}
+.shutter:active { transform: scale(0.94); }
+.shutter[disabled] { opacity: 0.5; }
+.side { flex: 1; display: flex; }
+.side.right { justify-content: flex-end; }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.bigpick { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 60px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-family: var(--font-display); font-weight: 800; font-size: 19px; }
+.bigpick input { position: absolute; inset: 0; opacity: 0; font-size: 0; }
+
+.notice { border-left: 4px solid var(--warn); background: var(--surface); border-radius: 6px; padding: 10px 12px; font-size: 14px; }
+.notice.bad { border-left-color: var(--bad); }
+
+/* result */
+.empty { color: var(--muted); font-size: 14px; text-align: center; margin: 0; }
+.idrow { display: flex; gap: 12px; align-items: flex-start; }
+.thumb { flex: 0 0 72px; width: 72px; height: 72px; border-radius: 10px; border: 1px solid var(--line); object-fit: cover; }
+.idtext { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.name { font-family: var(--font-display); font-weight: 800; font-size: 20px; line-height: 1.15; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 13px; margin: 0; overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 600; border: 1.5px solid currentColor; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.high { color: var(--good); } .pill.medium { color: var(--warn); } .pill.low { color: var(--bad); }
+.range { background: var(--tag); color: var(--tag-ink); font-family: var(--font-display); font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums; border-radius: 6px; padding: 0 8px; }
+.range small { font-family: var(--font-body); font-weight: 500; font-size: 11px; opacity: 0.8; margin-left: 4px; }
+.checks { display: flex; flex-direction: column; gap: 6px; }
+ul.plain { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
+.extras { font-size: 13px; color: var(--muted); margin: 0; }
+.extras b { color: var(--ink); font-weight: 600; }
+details.why { font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.why summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 500; }
+details.why[open] summary { margin-bottom: 8px; }
+details.why p { margin: 0 0 6px; }
+.search { display: flex; flex-direction: column; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.links { display: flex; flex-direction: column; gap: 8px; }
+.links .row { display: flex; gap: 8px; }
+a.link { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 12px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1.5px solid var(--line); color: var(--ink); background: var(--surface); }
+a.link.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); font-size: 16px; min-height: 50px; }
+a.link::after { content: "\2197"; }
+.busy { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.harder { align-self: flex-start; }
+
+/* feedback */
+.fb { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.fbrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; }
+.fbrow .lbl { font-weight: 600; margin-right: 4px; }
+.fbbtn { min-height: 40px; padding: 6px 16px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); font-weight: 600; font-size: 14px; cursor: pointer; }
+.fbbtn.good { color: var(--good); border-color: var(--good); }
+.fbbtn.bad { color: var(--bad); border-color: var(--bad); }
+.fbform { display: flex; flex-direction: column; gap: 8px; }
+.saved-good { color: var(--good); font-weight: 600; }
+.saved-bad { color: var(--bad); font-weight: 600; }
+
+/* lists */
+.listhead { display: flex; justify-content: space-between; align-items: center; }
+.listhead .textbtn, .lrow .textbtn { font-size: 12px; color: var(--muted); }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); padding: 10px 12px; cursor: pointer; font-size: 14px; }
+.hrow:first-child, .lrow:first-child { border-top: 0; }
+.hrow b { font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.hrow span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+details.learn summary { cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 4px 0 8px; list-style: none; }
+details.learn summary::-webkit-details-marker { display: none; }
+details.learn summary .count { color: var(--muted); font-size: 13px; }
+.lrow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 14px; }
+.lrow .ltext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.lrow .ltext span { color: var(--muted); font-size: 12px; }
+.lrow .textbtn { white-space: nowrap; }
+
+/* settings sheet */
+.settings h3 { font-family: var(--font-display); font-size: 18px; margin: 0; }
+.settings label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+footer { color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="18" cy="21" r="15" fill="var(--ink)"/>
+        <circle cx="18" cy="21" r="10.5" fill="var(--accent)"/>
+        <circle cx="18" cy="21" r="5" fill="var(--ink)"/>
+        <circle cx="14.5" cy="17.5" r="2.2" fill="var(--surface)" opacity="0.85"/>
+        <path d="M33 2 L34.6 6.4 L39 8 L34.6 9.6 L33 14 L31.4 9.6 L27 8 L31.4 6.4 Z" fill="var(--tag)"/>
+      </svg>
+      <span>Loot <span class="lens-word">Lens</span></span>
+    </h1>
+    <button class="iconbtn" type="button" id="gearBtn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <!-- First run: API key -->
+  <section class="card settings" id="setup" hidden>
+    <h3>Connect your Claude key</h3>
+    <p class="small">Paste the API key you made at console.anthropic.com. It's saved only on this phone and is used only to read your photos.</p>
+    <div class="field">
+      <input type="password" id="setupKey" placeholder="sk-ant-..." autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="API key">
+    </div>
+    <button class="primarybtn" type="button" id="setupSave">Save and start scanning</button>
+  </section>
+
+  <!-- Settings -->
+  <section class="card settings" id="settings" hidden>
+    <h3>Settings</h3>
+    <div class="field">
+      <label for="keyInput">API key</label>
+      <input type="password" id="keyInput" placeholder="sk-ant-..." autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="modelSel">Scan with</label>
+      <select id="modelSel">
+        <option value="claude-haiku-5-5">Haiku: fastest, about $0.001 a scan</option>
+        <option value="claude-sonnet-5-5">Sonnet: smarter, about 1.5¢ a scan</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Your feedback notes</label>
+      <div class="btnrow">
+        <button class="ghost" type="button" id="exportBtn">Copy backup</button>
+        <button class="ghost" type="button" id="importToggle">Restore or import</button>
+      </div>
+      <div class="field" id="importBox" hidden>
+        <textarea id="importText" placeholder="Paste a backup here" aria-label="Backup to import"></textarea>
+        <button class="ghost" type="button" id="importBtn">Import</button>
+      </div>
+    </div>
+    <button class="primarybtn" type="button" id="settingsDone">Done</button>
+  </section>
+
+  <!-- Camera -->
+  <section id="scanArea" hidden>
+    <div class="card" style="padding:10px">
+      <div class="cam" id="cam" hidden>
+        <video id="video" playsinline muted autoplay></video>
+        <img class="frozen" id="frozen" alt="" hidden>
+        <div class="camMsg" id="camMsg" hidden></div>
+        <div class="flash" id="flash"></div>
+      </div>
+      <label class="bigpick" id="fallbackPick" hidden>
+        Take a photo
+        <input type="file" id="fallbackInput" accept="image/*" capture="environment" aria-label="Take a photo">
+      </label>
+      <div class="shutterbar" id="shutterbar" hidden>
+        <div class="side">
+          <label class="ghost filebtn" style="display:flex;align-items:center">Gallery
+            <input type="file" id="galleryInput" accept="image/*" aria-label="Choose from gallery">
+          </label>
+        </div>
+        <button class="shutter" type="button" id="shutter" aria-label="Scan"></button>
+        <div class="side right">
+          <button class="ghost" type="button" id="typeBtn">Type it</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="notice" class="notice" role="status" hidden></div>
+
+  <section class="card" id="sheet" aria-live="polite" hidden></section>
+
+  <section id="learnWrap" hidden>
+    <details class="learn">
+      <summary><h2>What it's learned from you</h2><span class="count" id="learnCount"></span></summary>
+      <div class="list" id="learnList"></div>
+    </details>
+  </section>
+
+  <section id="historyWrap" hidden>
+    <div class="listhead" style="padding-bottom:8px">
+      <h2>Recent scans</h2>
+      <button class="textbtn" type="button" id="clearBtn">Clear</button>
+    </div>
+    <div class="list" id="history"></div>
+  </section>
+
+  <footer>Price is an AI estimate, not sold data. Check the sold comps before you buy or price.</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var K_KEY = "ll-key", K_MODEL = "ll-model", K_HIST = "ll-history", K_FB = "ll-feedback";
+  var HAIKU = "claude-haiku-5-5", SONNET = "claude-sonnet-5-5";
+  var current = null, currentThumb = null, lastBlob = null, busyCtl = null, stream = null;
+
+  /* ---------- storage ---------- */
+  function get(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+  function put(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  function apiKey() { return get(K_KEY, ""); }
+  function model() { return get(K_MODEL, HAIKU); }
+
+  /* ---------- helpers ---------- */
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function showNotice(msg, bad) { var n = $("notice"); n.textContent = msg; n.className = "notice" + (bad ? " bad" : ""); n.hidden = false; }
+  function hideNotice() { $("notice").hidden = true; }
+  function money(n) { return "$" + Math.round(Number(n)).toLocaleString("en-US"); }
+  function list(a) { return Array.isArray(a) ? a.filter(function (x) { return typeof x === "string" && x.trim(); }) : []; }
+  function hasRange(r) { return r.guess_low != null && r.guess_high != null && isFinite(parseFloat(r.guess_low)) && isFinite(parseFloat(r.guess_high)); }
+  function ul(arr) { return '<ul class="plain">' + arr.map(function (e) { return "<li>" + esc(e) + "</li>"; }).join("") + "</ul>"; }
+  function parsePrice(s) { var n = parseFloat(String(s || "").replace(/[$,\s]/g, "")); return isFinite(n) && n >= 0 ? n : null; }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function ebayUrl(q, sold) { return "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q) + (sold ? "&LH_Sold=1&LH_Complete=1" : ""); }
+  function linksHtml(q) {
+    q = q || " ";
+    return '<a class="link primary" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, true)) + '">eBay sold comps</a>' +
+      '<div class="row"><a class="link" target="_blank" rel="noopener" href="' + esc(ebayUrl(q, false)) + '">Active</a>' +
+      '<a class="link" target="_blank" rel="noopener" href="' + esc("https://www.google.com/search?q=" + encodeURIComponent(q + " sold price")) + '">Google</a></div>';
+  }
+
+  /* ---------- screens ---------- */
+  function showApp() {
+    var hasKey = !!apiKey();
+    $("setup").hidden = hasKey;
+    $("scanArea").hidden = !hasKey;
+    if (hasKey) startCamera();
+  }
+  $("setupSave").addEventListener("click", function () {
+    var k = $("setupKey").value.trim();
+    if (!/^sk-ant-/.test(k)) { showNotice("That doesn't look like a Claude API key. It should start with sk-ant-.", true); return; }
+    put(K_KEY, k); hideNotice(); showApp();
+  });
+  $("gearBtn").addEventListener("click", function () {
+    var s = $("settings");
+    if (!s.hidden) { s.hidden = true; return; }
+    $("keyInput").value = apiKey();
+    $("modelSel").value = model();
+    s.hidden = false;
+    window.scrollTo(0, 0);
+  });
+  $("settingsDone").addEventListener("click", function () {
+    var k = $("keyInput").value.trim();
+    if (k && !/^sk-ant-/.test(k)) { showNotice("That doesn't look like a Claude API key. It should start with sk-ant-.", true); return; }
+    put(K_KEY, k); put(K_MODEL, $("modelSel").value);
+    $("settings").hidden = true; hideNotice(); showApp();
+  });
+  $("exportBtn").addEventListener("click", function () {
+    var text = JSON.stringify({ app: "loot-lens", feedback: get(K_FB, []) });
+    navigator.clipboard.writeText(text).then(function () { showNotice("Backup copied. Paste it into a note to keep it safe."); },
+      function () { $("importBox").hidden = false; $("importText").value = text; $("importText").select(); showNotice("Copy the selected text below to save your backup."); });
+  });
+  $("importToggle").addEventListener("click", function () { $("importBox").hidden = !$("importBox").hidden; });
+  $("importBtn").addEventListener("click", function () {
+    try {
+      var data = JSON.parse($("importText").value);
+      var incoming = Array.isArray(data) ? data : data.feedback;
+      if (!Array.isArray(incoming)) throw new Error("shape");
+      var have = get(K_FB, []), ids = {};
+      have.forEach(function (f) { ids[f.id] = 1; });
+      incoming.forEach(function (f) { if (f && f.verdict && !ids[f.id]) { f.id = f.id || uid(); have.push(f); } });
+      have.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+      put(K_FB, have); renderLearn();
+      $("importText").value = ""; $("importBox").hidden = true;
+      showNotice("Imported. You now have " + have.length + " feedback notes.");
+    } catch (e) { showNotice("That paste isn't a Loot Lens backup. Copy the whole backup text and try again.", true); }
+  });
+
+  /* ---------- camera ---------- */
+  async function startCamera() {
+    if (stream) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { useFallback(); return; }
+    $("cam").hidden = false; $("shutterbar").hidden = false; $("fallbackPick").hidden = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+      var v = $("video"); v.srcObject = stream; await v.play().catch(function () {});
+      $("camMsg").hidden = true;
+    } catch (e) {
+      stream = null;
+      if (e && e.name === "NotAllowedError") {
+        $("camMsg").textContent = "Camera access is off. Allow the camera for this app in Chrome's site settings, or use Gallery.";
+        $("camMsg").hidden = false;
+      } else useFallback();
+    }
+  }
+  function stopCamera() { if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; } }
+  function useFallback() { $("cam").hidden = true; $("shutterbar").hidden = false; $("shutter").hidden = true; $("fallbackPick").hidden = false; }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stopCamera(); else if (apiKey() && !$("scanArea").hidden) startCamera();
+  });
+
+  function grabFrame() {
+    var v = $("video");
+    if (!stream || !v.videoWidth) return Promise.reject(new Error("nocam"));
+    var s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+    var c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    return new Promise(function (res, rej) { c.toBlob(function (b) { b ? res(b) : rej(new Error("encode")); }, "image/jpeg", 0.85); });
+  }
+  function shrink(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var s = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement("canvas");
+        c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error("encode")); }, "image/jpeg", 0.85);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("decode")); };
+      img.src = url;
+    });
+  }
+
+  $("shutter").addEventListener("click", async function () {
+    var f = $("flash"); f.classList.add("on"); setTimeout(function () { f.classList.remove("on"); }, 60);
+    if (navigator.vibrate) navigator.vibrate(15);
+    try { var b = await grabFrame(); identify(b, model()); }
+    catch (e) { showNotice("The camera isn't ready yet. Give it a second and tap again, or use Gallery.", true); }
+  });
+  function onFile(ev) {
+    var file = ev.target.files && ev.target.files[0]; ev.target.value = "";
+    if (!file) return;
+    shrink(file).then(function (b) { identify(b, model()); }, function () { showNotice("That file wouldn't open as a photo. Try another one.", true); });
+  }
+  $("galleryInput").addEventListener("change", onFile);
+  $("fallbackInput").addEventListener("change", onFile);
+  $("typeBtn").addEventListener("click", function () { hideNotice(); render({ manual: true, search_query: "" }, null).focus(); });
+
+  /* ---------- Claude ---------- */
+  var PROMPT = [
+    "You help a reseller identify an item from one photo so they can look up sold prices on eBay.",
+    "Reply with ONLY a JSON object, no markdown, with these keys:",
+    '"name": short specific item name;',
+    '"brand": string or null; "model": string or null; "category": short string;',
+    '"search_query": the best eBay search phrase, 3 to 8 words, no punctuation;',
+    '"alt_queries": array of up to 3 other phrases (a broader one, a variant, or an included accessory);',
+    '"confidence": "high", "medium" or "low" for how sure you are of the exact make and model;',
+    '"confidence_reason": one plain sentence;',
+    '"evidence": array of up to 4 short strings naming what in the photo supports the ID, such as text you can read;',
+    '"verify": array of up to 3 short things the seller should check that change the value (variant, completeness, condition, working or not);',
+    '"extras": array of other sellable items visible in the photo, or [];',
+    '"guess_low" and "guess_high": numbers in US dollars for a typical used sold range on eBay, or null for both if you cannot say honestly;',
+    '"guess_note": one sentence on what the guess is based on and how shaky it is.',
+    "Never invent a model number you cannot read or clearly recognize. If you are unsure, say so, describe the item generically, and lower the confidence."
+  ].join("\n");
+
+  function learnedPrompt() {
+    var fb = get(K_FB, []);
+    var bad = fb.filter(function (f) { return f.verdict === "bad"; }).slice(0, 30);
+    var good = fb.filter(function (f) { return f.verdict === "good"; }).slice(0, 15);
+    if (!bad.length && !good.length) return "";
+    var lines = ["", "This seller has reviewed your past answers. Learn from them. Apply their notes to similar items and avoid repeating mistakes."];
+    bad.forEach(function (f) {
+      var s = '- WRONG: you said "' + f.ai_name + '"; it was actually "' + f.correct_name + '".';
+      if (f.sold_price != null) s += " It sells for about $" + f.sold_price + ".";
+      if (f.note) s += " Seller's tip: " + f.note;
+      lines.push(s);
+    });
+    good.forEach(function (f) {
+      var s = '- RIGHT: "' + f.ai_name + '".';
+      if (f.sold_price != null) s += " It sells for about $" + f.sold_price + ".";
+      if (f.note) s += " Seller's tip: " + f.note;
+      lines.push(s);
+    });
+    lines.push("When the seller has given a sold price for the same or a very similar item, base guess_low and guess_high on it and say so in guess_note.");
+    return lines.join("\n");
+  }
+
+  function blobToBase64(blob) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result).split(",")[1]); };
+      r.onerror = rej; r.readAsDataURL(blob);
+    });
+  }
+  function parseLoose(s) {
+    s = String(s || ""); var a = s.indexOf("{"), b = s.lastIndexOf("}");
+    if (a < 0 || b <= a) throw new Error("no json");
+    return JSON.parse(s.slice(a, b + 1));
+  }
+
+  async function askClaude(blob, mdl, signal) {
+    var b64 = await blobToBase64(blob);
+    var res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", signal: signal,
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey(),
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: mdl, max_tokens: 1200,
+        messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+          { type: "text", text: PROMPT + learnedPrompt() }
+        ] }]
+      })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) {
+      var err = new Error((data.error && data.error.message) || ("HTTP " + res.status));
+      err.status = res.status; err.type = data.error && data.error.type; throw err;
+    }
+    var text = (data.content || []).filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("");
+    return parseLoose(text);
+  }
+
+  function explainError(e) {
+    var m = String(e && e.message || "").toLowerCase();
+    if (e.status === 401) return "Your API key wasn't accepted. Open Settings and paste the key again.";
+    if (m.indexOf("credit") >= 0 || m.indexOf("billing") >= 0) return "Your Claude account is out of credit. Add credit at console.anthropic.com, then scan again.";
+    if (e.status === 429) return "You've hit your rate or spending limit. Wait a minute, or raise the limit at console.anthropic.com.";
+    if (e.status === 529 || e.type === "overloaded_error") return "Claude is busy right now. Tap the shutter again in a few seconds.";
+    if (e.status === 404 || m.indexOf("model") >= 0) return "That model isn't available on your account. Pick the other one in Settings.";
+    if (e instanceof TypeError) return "No connection. Check your signal and try again.";
+    return "Couldn't identify that one. Try again with the label or model number in frame, or type the item.";
+  }
+
+  async function identify(blob, mdl) {
+    hideNotice();
+    if (busyCtl) busyCtl.abort();
+    busyCtl = new AbortController();
+    lastBlob = blob;
+    var thumbUrl = URL.createObjectURL(blob);
+    renderBusy(thumbUrl, mdl);
+    $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+      var r = await askClaude(blob, mdl, busyCtl.signal);
+      if (!r.name && !r.search_query) throw new Error("empty");
+      r.model_used = mdl;
+      render(r, thumbUrl);
+      saveHistory(r);
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      render({ manual: true, search_query: "" }, thumbUrl);
+      showNotice(explainError(e), true);
+    }
+  }
+
+  /* ---------- result ---------- */
+  function renderBusy(thumbUrl, mdl) {
+    var s = $("sheet"); s.hidden = false;
+    s.innerHTML = '<div class="idrow">' + (thumbUrl ? '<img class="thumb" alt="Your photo" src="' + esc(thumbUrl) + '">' : "") +
+      '<div class="idtext"><div class="busy"><span class="spinner"></span><span>Identifying…</span></div>' +
+      '<p class="meta">' + (mdl === SONNET ? "Looking harder. Usually 5 to 15 seconds." : "Usually a few seconds.") + "</p></div></div>";
+  }
+
+  function render(r, thumbUrl) {
+    current = r; currentThumb = thumbUrl || null;
+    var s = $("sheet"); s.hidden = false;
+    var conf = ["high", "medium", "low"].indexOf(r.confidence) >= 0 ? r.confidence : "low";
+    var confLabel = { high: "Sure", medium: "Probably", low: "Unsure" }[conf];
+    var q = r.search_query || r.name || "";
+    var evidence = list(r.evidence), verify = list(r.verify), extras = list(r.extras), alts = list(r.alt_queries);
+    var meta = [r.brand, r.model, r.category].filter(Boolean).join(" · ");
+    var h = "";
+    if (!r.manual || thumbUrl) {
+      h += '<div class="idrow">';
+      if (thumbUrl) h += '<img class="thumb" alt="Your photo" src="' + esc(thumbUrl) + '">';
+      h += '<div class="idtext"><p class="name">' + esc(r.name || (r.manual ? "Type what this is" : "Unknown item")) + "</p>";
+      if (meta) h += '<p class="meta">' + esc(meta) + "</p>";
+      if (!r.manual) {
+        h += '<div class="badges"><span class="pill ' + conf + '">' + confLabel + "</span>";
+        if (hasRange(r)) h += '<span class="range">' + money(r.guess_low) + "–" + money(r.guess_high) + "<small>AI est.</small></span>";
+        h += "</div>";
+      }
+      h += "</div></div>";
+    }
+    if (verify.length) h += '<div class="checks"><h2>Check before buying</h2>' + ul(verify) + "</div>";
+    if (extras.length) h += '<p class="extras"><b>Also in photo:</b> ' + esc(extras.join(", ")) + "</p>";
+    h += '<div class="search"><input type="text" id="queryInput" aria-label="Search phrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. Kenner Boba Fett 1979" value="' + esc(q) + '">';
+    if (alts.length) h += '<div class="chips">' + alts.map(function (a) { return '<button type="button" class="chip" data-q="' + esc(a) + '">' + esc(a) + "</button>"; }).join("") + "</div>";
+    h += '<div class="links" id="links">' + linksHtml(q) + "</div></div>";
+    if (!r.manual && r.model_used !== SONNET && currentThumb && lastBlob) h += '<button class="ghost harder" type="button" id="harderBtn">Not right? Try harder with Sonnet</button>';
+    if (!r.manual && (r.confidence_reason || evidence.length || r.guess_note)) {
+      h += '<details class="why"><summary>Why this ID and price</summary>';
+      if (r.confidence_reason) h += "<p>" + esc(r.confidence_reason) + "</p>";
+      if (evidence.length) h += ul(evidence);
+      if (r.guess_note) h += '<p class="meta" style="margin-top:6px">' + esc(r.guess_note) + "</p>";
+      h += "</details>";
+    }
+    if (!r.manual) h += '<div class="fb" id="fb"></div>';
+    s.innerHTML = h;
+
+    var qi = $("queryInput");
+    qi.addEventListener("input", function () { current.search_query = qi.value.trim(); $("links").innerHTML = linksHtml(current.search_query); });
+    s.querySelectorAll(".chip").forEach(function (c) { c.addEventListener("click", function () { qi.value = c.getAttribute("data-q"); qi.dispatchEvent(new Event("input")); }); });
+    if ($("harderBtn")) $("harderBtn").addEventListener("click", function () { identify(lastBlob, SONNET); });
+    if ($("fb")) renderFb(false);
+    return qi;
+  }
+
+  /* ---------- feedback ---------- */
+  function renderFb(editing, verdict) {
+    var el = $("fb"), r = current, f = r.fb, h = "";
+    if (!el) return;
+    if (!editing && f) {
+      h += '<div class="fbrow">' + (f.verdict === "good" ? '<span class="saved-good">✓ Marked right</span>' : '<span class="saved-bad">✗ Corrected</span>');
+      if (f.sold_price != null) h += '<span class="meta">sells for ' + money(f.sold_price) + "</span>";
+      h += '<button class="textbtn" type="button" id="fbEdit">' + (f.verdict === "good" && f.sold_price == null ? "Add sold price" : "Edit") + "</button></div>";
+      el.innerHTML = h;
+      $("fbEdit").addEventListener("click", function () { renderFb(true, f.verdict); });
+      return;
+    }
+    if (!editing) {
+      el.innerHTML = '<div class="fbrow"><span class="lbl">Was this right?</span>' +
+        '<button class="fbbtn good" type="button" id="fbGood">✓ Right</button>' +
+        '<button class="fbbtn bad" type="button" id="fbBad">✗ Wrong</button></div>';
+      $("fbGood").addEventListener("click", function () { saveFb({ verdict: "good" }); });
+      $("fbBad").addEventListener("click", function () { renderFb(true, "bad"); });
+      return;
+    }
+    f = f || {};
+    h += '<div class="fbform">';
+    if (verdict === "bad") h += '<input type="text" id="fbName" aria-label="What it actually is" placeholder="What it actually is" value="' + esc(f.correct_name || "") + '">';
+    h += '<input type="text" id="fbPrice" inputmode="decimal" aria-label="What it sells for" placeholder="What it actually sells for, e.g. 45 (optional)" value="' + (f.sold_price != null ? esc(f.sold_price) : "") + '">';
+    h += '<input type="text" id="fbNote" aria-label="Tip for next time" placeholder="Tip for next time (optional)" value="' + esc(f.note || "") + '">';
+    h += '<button class="primarybtn" type="button" id="fbSave">Save</button></div>';
+    el.innerHTML = h;
+    ($("fbName") || $("fbPrice")).focus();
+    $("fbSave").addEventListener("click", function () {
+      var name = $("fbName") ? $("fbName").value.trim() : "";
+      if (verdict === "bad" && !name) { $("fbName").focus(); showNotice("Type what the item actually is, then Save.", true); return; }
+      saveFb({ verdict: verdict, correct_name: name || null, sold_price: parsePrice($("fbPrice").value), note: $("fbNote").value.trim() || null });
+    });
+  }
+
+  function saveFb(patch) {
+    var r = current, prev = r.fb || {};
+    if (!r.ai_name) r.ai_name = r.name;
+    var body = {
+      id: prev.id || uid(),
+      ts: prev.ts || Date.now(),
+      verdict: patch.verdict,
+      ai_name: r.ai_name || "",
+      category: r.category || "",
+      correct_name: patch.verdict === "bad" ? patch.correct_name : null,
+      sold_price: "sold_price" in patch ? patch.sold_price : (prev.sold_price != null ? prev.sold_price : null),
+      note: "note" in patch ? patch.note : (prev.note || null)
+    };
+    var all = get(K_FB, []).filter(function (x) { return x.id !== body.id; });
+    all.unshift(body);
+    if (!put(K_FB, all.slice(0, 500))) { showNotice("Couldn't save that on this phone. Storage may be full.", true); return; }
+    hideNotice();
+    r.fb = body;
+    if (body.verdict === "bad") { r.name = body.correct_name; r.search_query = body.correct_name; r.brand = r.model = null; }
+    else r.name = r.ai_name;
+    saveHistory(r);
+    render(r, currentThumb);
+    renderLearn();
+  }
+
+  function renderLearn() {
+    var fb = get(K_FB, []);
+    $("learnWrap").hidden = fb.length === 0;
+    $("learnCount").textContent = fb.length + (fb.length === 1 ? " note" : " notes");
+    var box = $("learnList"); box.innerHTML = "";
+    fb.forEach(function (f) {
+      var row = document.createElement("div"); row.className = "lrow";
+      var main = f.verdict === "bad" ? f.correct_name : f.ai_name;
+      var sub = f.verdict === "bad" ? "AI said “" + f.ai_name + "”" : "AI got it right";
+      if (f.sold_price != null) sub += " · sells for " + money(f.sold_price);
+      if (f.note) sub += " · " + f.note;
+      row.innerHTML = '<div class="ltext"><b>' + esc(main) + "</b><span>" + esc(sub) + '</span></div><button class="textbtn" type="button">Remove</button>';
+      var btn = row.querySelector("button"), armed = false;
+      btn.addEventListener("click", function () {
+        if (!armed) { armed = true; btn.textContent = "Tap to confirm"; return; }
+        put(K_FB, get(K_FB, []).filter(function (x) { return x.id !== f.id; }));
+        renderLearn();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  /* ---------- history ---------- */
+  function saveHistory(r) {
+    if (!r.sid) r.sid = uid();
+    var copy = JSON.parse(JSON.stringify(r)); copy.ts = Date.now();
+    put(K_HIST, [copy].concat(get(K_HIST, []).filter(function (x) { return x.sid !== copy.sid; })).slice(0, 15));
+    renderHistory();
+  }
+  function renderHistory() {
+    var h = get(K_HIST, []);
+    $("historyWrap").hidden = h.length === 0;
+    var box = $("history"); box.innerHTML = "";
+    h.forEach(function (r) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "hrow";
+      b.innerHTML = "<b>" + esc(r.name || r.search_query) + "</b><span>" + (hasRange(r) ? money(r.guess_low) + "–" + money(r.guess_high) : "") + "</span>";
+      b.addEventListener("click", function () { hideNotice(); lastBlob = null; render(r, null); $("sheet").scrollIntoView({ behavior: "smooth", block: "start" }); });
+      box.appendChild(b);
+    });
+  }
+  $("clearBtn").addEventListener("click", function () { put(K_HIST, []); renderHistory(); });
+
+  /* ---------- start ---------- */
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+  renderHistory();
+  renderLearn();
+  showApp();
+})();
+</script>
+</body>
+</html>
